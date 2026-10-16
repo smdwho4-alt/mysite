@@ -1,0 +1,123 @@
+/* 한글 웹폰트 (Pretendard) — 다른 폰트로 바꾸려면 이 줄과 아래 --font-sans 를 바꾸세요 */
+@import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css");
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* ==========================================================================
+   ★ 디자인 토큰 (사이트 전체의 색·모서리·폰트)
+   --------------------------------------------------------------------------
+   이 블록의 값만 바꾸면 사이트 전체 분위기가 바뀝니다.
+   shadcn/ui, 21st.dev 컴포넌트도 이 이름(--primary, --muted ...)을 그대로 씁니다.
+
+   - background / foreground : 기본 배경색 / 기본 글자색
+   - primary                 : 포인트 색 (주요 버튼 등)
+   - muted                   : 은은한 배경 (카드, 구역 배경)
+   - muted-foreground        : 흐린 글자 (설명문)
+   - border                  : 테두리 선
+   - radius                  : 모서리 둥글기 (0 = 각진, 1rem = 많이 둥근)
+
+   색은 #9a0002 같은 HEX 값으로 바꿔도 됩니다.
+   ========================================================================== */
+:root {
+  --radius: 0.75rem;
+
+  --background: #ffffff;
+  --foreground: #111111;
+
+  --card: #ffffff;
+  --card-foreground: #111111;
+  --popover: #ffffff;
+  --popover-foreground: #111111;
+
+  --primary: #111111;
+  --primary-foreground: #ffffff;
+
+  --secondary: #f4f4f5;
+  --secondary-foreground: #111111;
+
+  --muted: #f4f4f5;
+  --muted-foreground: #6b6b6b;
+
+  --accent: #f4f4f5;
+  --accent-foreground: #111111;
+
+  --destructive: #dc2626;
+
+  --border: #e5e5e5;
+  --input: #e5e5e5;
+  --ring: #a3a3a3;
+
+  /* 폰트 */
+  --font-body: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --font-display: var(--font-body); /* 제목용 폰트를 따로 쓰고 싶으면 여기만 바꾸기 */
+}
+
+/* 다크 모드용 값 (html 태그에 class="dark" 를 붙이면 적용) */
+.dark {
+  --background: #0a0a0a;
+  --foreground: #fafafa;
+  --card: #141414;
+  --card-foreground: #fafafa;
+  --popover: #141414;
+  --popover-foreground: #fafafa;
+  --primary: #fafafa;
+  --primary-foreground: #0a0a0a;
+  --secondary: #1f1f1f;
+  --secondary-foreground: #fafafa;
+  --muted: #1f1f1f;
+  --muted-foreground: #a1a1a1;
+  --accent: #1f1f1f;
+  --accent-foreground: #fafafa;
+  --destructive: #ef4444;
+  --border: #2a2a2a;
+  --input: #2a2a2a;
+  --ring: #525252;
+}
+
+/* 위 토큰을 Tailwind 클래스(bg-primary, text-muted-foreground 등)로 연결 — 수정할 필요 없음 */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --font-sans: var(--font-body);
+  --font-display: var(--font-display);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    scroll-behavior: smooth;
+  }
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    word-break: keep-all; /* 한글 단어가 중간에 끊기지 않게 */
+  }
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
+  }
+}
