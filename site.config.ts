@@ -21,6 +21,9 @@ export const siteConfig = {
     { label: "연락처", href: "#contact" },
   ],
 
+  /* 상단 메뉴 맨 오른쪽 버튼 (누르면 새 탭에서 관리자 페이지가 열림) */
+  secretButton: { label: "비밀 버튼", href: "/admin" },
+
   /* 첫 화면(히어로) */
   hero: {
     eyebrow: "Hello, World",

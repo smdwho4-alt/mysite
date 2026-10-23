@@ -12,6 +12,11 @@ import { logout } from "./actions";
 import { LoginForm } from "./_components/login-form";
 import { ItemForm } from "./_components/item-form";
 import { DeleteButton } from "./_components/delete-button";
+import { HeroTextForm } from "./_components/hero-text-form";
+import { heroTextFields } from "@/lib/data";
+
+/** 관리자 탭 중 「히어로 글자」 탭의 주소 이름 */
+const HERO_TAB = "hero-text";
 
 /* 관리자 페이지 (주소: /admin)
    1) 비밀번호가 설정 안 됐으면 → 설정 안내
@@ -75,15 +80,31 @@ export default async function AdminPage(props: PageProps<"/admin">) {
 
   const sections = siteConfig.adminSections;
   const requested = typeof searchParams.section === "string" ? searchParams.section : undefined;
+  const isHeroTab = requested === HERO_TAB;
   const current = sections.find((s) => s.key === requested) ?? sections[0];
 
-  const { data, error } = await supabase
-    .from("items")
-    .select("*")
-    .eq("section", current.key)
-    .order("sort_order", { ascending: true })
-    .order("created_at", { ascending: true });
+  // 「히어로 글자」 탭: 저장된 글자를 불러와 입력 칸에 채움 (없으면 site.config.ts 글자)
+  const heroResult = isHeroTab
+    ? await supabase.from("site_texts").select("key, value").in("key", heroTextFields.map((f) => f.key))
+    : null;
+  const savedHero = new Map((heroResult?.data ?? []).map((r) => [r.key as string, r.value as string]));
+  const heroFields = heroTextFields.map((f) => ({
+    key: f.key,
+    label: f.label,
+    multiline: f.multiline,
+    value: savedHero.get(f.key) || f.fallback,
+  }));
+
+  const { data, error: itemsError } = isHeroTab
+    ? { data: [], error: null }
+    : await supabase
+        .from("items")
+        .select("*")
+        .eq("section", current.key)
+        .order("sort_order", { ascending: true })
+        .order("created_at", { ascending: true });
   const items = (data ?? []) as Item[];
+  const error = heroResult?.error ?? itemsError;
 
   return (
     <Container className="py-10">
@@ -106,8 +127,16 @@ export default async function AdminPage(props: PageProps<"/admin">) {
 
       {/* 섹션 탭 (site.config.ts 의 adminSections) */}
       <nav className="mt-8 flex flex-wrap gap-2">
+        <Button asChild size="sm" variant={isHeroTab ? "default" : "outline"}>
+          <Link href={`/admin?section=${HERO_TAB}`}>히어로 글자</Link>
+        </Button>
         {sections.map((s) => (
-          <Button key={s.key} asChild size="sm" variant={s.key === current.key ? "default" : "outline"}>
+          <Button
+            key={s.key}
+            asChild
+            size="sm"
+            variant={!isHeroTab && s.key === current.key ? "default" : "outline"}
+          >
             <Link href={`/admin?section=${s.key}`}>{s.label}</Link>
           </Button>
         ))}
@@ -121,6 +150,15 @@ export default async function AdminPage(props: PageProps<"/admin">) {
         </p>
       ) : null}
 
+      {isHeroTab ? (
+        <section className="mt-8 max-w-2xl rounded-xl border p-6">
+          <h2 className="text-lg font-semibold">히어로(첫 화면) 글자</h2>
+          <p className="mb-5 mt-1 text-sm text-muted-foreground">
+            고친 뒤 저장하면 사이트 첫 화면에 바로 반영됩니다.
+          </p>
+          <HeroTextForm fields={heroFields} />
+        </section>
+      ) : (
       <div className="mt-8 grid gap-10 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
         {/* 새 항목 추가 */}
         <section className="h-fit rounded-xl border p-6">
@@ -168,6 +206,7 @@ export default async function AdminPage(props: PageProps<"/admin">) {
           )}
         </section>
       </div>
+      )}
     </Container>
   );
 }
