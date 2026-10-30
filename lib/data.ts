@@ -33,7 +33,6 @@ export async function getItems(section: string): Promise<Item[]> {
 export const heroTextFields = [
   { key: "hero.eyebrow", label: "작은 제목", multiline: false, fallback: siteConfig.hero.eyebrow },
   { key: "hero.title", label: "큰 제목 (Enter로 줄바꿈)", multiline: true, fallback: siteConfig.hero.title },
-  { key: "hero.description", label: "소개 문장", multiline: true, fallback: siteConfig.hero.description },
   { key: "hero.primaryCta", label: "첫 번째 버튼 글자", multiline: false, fallback: siteConfig.hero.primaryCta.label },
   { key: "hero.secondaryCta", label: "두 번째 버튼 글자", multiline: false, fallback: siteConfig.hero.secondaryCta.label },
 ] as const;

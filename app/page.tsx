@@ -4,6 +4,10 @@ import { Hero } from "@/components/sections/hero";
 import { About } from "@/components/sections/about";
 import { Features } from "@/components/sections/features";
 import { Contact } from "@/components/sections/contact";
+import { NoticeBar } from "@/components/sections/notice-bar";
+import { Notices } from "@/components/sections/notices";
+import { Courses } from "@/components/sections/courses";
+import { QuickLinks } from "@/components/sections/quick-links";
 
 /* 메인 페이지 = 섹션 블록을 위에서 아래로 쌓아 놓은 것.
    - 섹션 순서 바꾸기: 아래 줄의 순서를 바꾸면 됩니다.
@@ -19,8 +23,12 @@ export default function HomePage() {
       <Navbar />
       <main className="flex-1">
         <Hero />
+        <NoticeBar />
+        <Notices />
         <About />
+        <Courses />
         <Features />
+        <QuickLinks />
         <Contact />
       </main>
       <Footer />

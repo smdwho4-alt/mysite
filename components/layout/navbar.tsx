@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { Menu, X } from "lucide-react";
 
 import { siteConfig } from "@/site.config";
@@ -17,7 +18,18 @@ export function Navbar() {
     <header className="sticky top-0 z-50 border-b border-border/60 bg-background/80 backdrop-blur">
       <Container className="flex h-16 items-center justify-between">
         <Link href="/" className="text-lg font-semibold tracking-tight">
-          {siteConfig.name}
+          {siteConfig.logo ? (
+            <Image
+              src={siteConfig.logo}
+              alt={siteConfig.name}
+              width={488}
+              height={125}
+              priority
+              className="h-10 w-auto mix-blend-multiply"
+            />
+          ) : (
+            siteConfig.name
+          )}
         </Link>
 
         {/* 데스크톱 메뉴 */}

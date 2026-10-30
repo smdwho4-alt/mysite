@@ -20,6 +20,8 @@ export function SectionHeader({
         </p>
       ) : null}
       <h2 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">{title}</h2>
+      {/* 제목 아래 짧은 노란 밑줄 (색: globals.css 의 --highlight) */}
+      <span aria-hidden className="mt-4 block h-1 w-12 rounded-full bg-highlight" />
       {description ? (
         <p className="mt-4 text-base leading-relaxed text-muted-foreground">{description}</p>
       ) : null}
