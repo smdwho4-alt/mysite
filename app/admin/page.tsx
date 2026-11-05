@@ -3,7 +3,7 @@ import Image from "next/image";
 import { ArrowLeft, EyeOff } from "lucide-react";
 
 import { siteConfig } from "@/site.config";
-import { isAdmin, isAdminPasswordSet } from "@/lib/admin-auth";
+import { getAdminState } from "@/lib/admin-auth";
 import { getAdminClient } from "@/lib/supabase-admin";
 import type { Item } from "@/lib/types";
 import { Container } from "@/components/layout/container";
@@ -18,13 +18,14 @@ import { heroTextFields } from "@/lib/data";
 /** 관리자 탭 중 「히어로 글자」 탭의 주소 이름 */
 const HERO_TAB = "hero-text";
 
-/* 관리자 페이지 (주소: /admin)
-   1) 비밀번호가 설정 안 됐으면 → 설정 안내
+/* 관리자 페이지 (주소: /admin) — Supabase Auth 로그인
+   1) Supabase 연결 정보가 없으면 → 설정 안내
    2) 로그인 안 했으면 → 로그인 화면
-   3) Supabase 연결 안 됐으면 → 연결 안내
-   4) 모두 준비됐으면 → 섹션별 카드(항목) 관리 */
+   3) 로그인했지만 관리자 명단(admins)에 없으면 → 접근 거부 안내
+   4) 관리자이면 → 섹션별 카드(항목) 관리
+   ※ 관리자 확인은 이 페이지와 모든 서버 액션(actions.ts)이 서버에서 각각 직접 합니다. */
 
-export const metadata = { title: "관리자" };
+export const metadata = { title: "관리자", robots: { index: false, follow: false } };
 
 function Notice({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -38,16 +39,19 @@ function Notice({ title, children }: { title: string; children: React.ReactNode 
 export default async function AdminPage(props: PageProps<"/admin">) {
   const searchParams = await props.searchParams;
 
-  if (!isAdminPasswordSet()) {
+  const admin = await getAdminState();
+
+  if (admin.status === "unconfigured") {
     return (
       <Container>
-        <Notice title="관리자 비밀번호를 먼저 설정하세요">
+        <Notice title="Supabase 연결 정보를 먼저 설정하세요">
           <p>
             1. 프로젝트 폴더의 <code>.env.example</code> 파일을 복사해서 이름을{" "}
             <code>.env.local</code> 로 바꿉니다.
           </p>
           <p>
-            2. <code>ADMIN_PASSWORD=</code> 뒤에 원하는 비밀번호를 적고 저장합니다.
+            2. <code>NEXT_PUBLIC_SUPABASE_URL</code>, <code>NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY</code>,{" "}
+            <code>SUPABASE_SECRET_KEY</code> 뒤에 Supabase 에서 복사한 값을 넣고 저장합니다.
           </p>
           <p>3. 개발 서버를 껐다가(Ctrl + C) 다시 켭니다(npm run dev).</p>
         </Notice>
@@ -55,10 +59,26 @@ export default async function AdminPage(props: PageProps<"/admin">) {
     );
   }
 
-  if (!(await isAdmin())) {
+  if (admin.status === "anonymous") {
     return (
       <Container>
         <LoginForm />
+      </Container>
+    );
+  }
+
+  if (admin.status === "not_admin") {
+    return (
+      <Container>
+        <Notice title="관리자 권한이 없는 계정입니다">
+          <p>로그인은 되어 있지만 이 계정은 관리자 명단에 등록되어 있지 않습니다.</p>
+          <p>관리자 계정으로 다시 로그인하려면 먼저 로그아웃하세요.</p>
+          <form action={logout} className="pt-2">
+            <Button type="submit" variant="outline" size="sm">
+              로그아웃
+            </Button>
+          </form>
+        </Notice>
       </Container>
     );
   }

@@ -1,7 +1,7 @@
 "use server";
 
 /* 관리자 페이지의 버튼들이 실제로 하는 일 (서버에서 실행됨)
-   - login / logout      : 로그인, 로그아웃
+   - login / logout      : 로그인, 로그아웃 (Supabase Auth: 이메일 + 비밀번호)
    - saveItem            : 카드 추가 또는 수정 (이미지 업로드 포함)
    - deleteItem          : 카드 삭제
    - saveHeroTexts       : 히어로(첫 화면) 글자 저장 */
@@ -10,7 +10,8 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { siteConfig } from "@/site.config";
-import { checkPassword, endAdminSession, isAdmin, startAdminSession } from "@/lib/admin-auth";
+import { isAdmin } from "@/lib/admin-auth";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getAdminClient, IMAGE_BUCKET } from "@/lib/supabase-admin";
 import { heroTextFields } from "@/lib/data";
 
@@ -20,17 +21,40 @@ const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5MB
 
 /* ---------- 로그인 / 로그아웃 ---------- */
 
+const LOGIN_FAILED_MESSAGE = "이메일 또는 비밀번호가 올바르지 않습니다.";
+
 export async function login(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const email = String(formData.get("email") ?? "").trim();
   const password = String(formData.get("password") ?? "");
-  if (!checkPassword(password)) {
-    return { message: "비밀번호가 올바르지 않습니다." };
+
+  if (!email || !password) return { message: "이메일과 비밀번호를 입력하세요." };
+  // 너무 긴 입력은 확인하지 않고 거절 (이유는 알려 주지 않음)
+  if (email.length > 254 || password.length > 200) return { message: LOGIN_FAILED_MESSAGE };
+
+  const supabase = await createSupabaseServerClient();
+  if (!supabase) return { message: "Supabase가 연결되지 않았습니다. .env.local 을 확인하세요." };
+
+  const { error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error) {
+    // 계정이 있는지/없는지, 비밀번호만 틀렸는지 알려 주지 않도록 같은 문구로 안내 (요청 과다만 따로 안내)
+    if (error.status === 429) return { message: "시도가 너무 많습니다. 잠시 후 다시 시도하세요." };
+    return { message: LOGIN_FAILED_MESSAGE };
   }
-  await startAdminSession();
+
+  // 로그인에 성공해도 관리자 명단(admins)에 없으면 접근 거부 → 이 로그인은 바로 끝냄 (이 기기의 로그인만)
+  const { data: isAdminFlag, error: rpcError } = await supabase.rpc("is_admin");
+  if (rpcError || isAdminFlag !== true) {
+    await supabase.auth.signOut({ scope: "local" });
+    return { message: "이 계정은 관리자 권한이 없습니다." };
+  }
+
+  // 이동 위치는 항상 고정된 내부 주소 (주소창/입력값으로 바꿀 수 없음)
   redirect("/admin");
 }
 
 export async function logout() {
-  await endAdminSession();
+  const supabase = await createSupabaseServerClient();
+  if (supabase) await supabase.auth.signOut({ scope: "local" }); // 이 기기의 로그인만 종료
   redirect("/admin");
 }
 
