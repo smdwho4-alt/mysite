@@ -11,6 +11,7 @@ import {
   buildImagePath,
   detectImageKind,
   parseManagedImageUrl,
+  pickUploadedFile,
   sanitizeError,
   validateImageFile,
 } from "../lib/admin-images.ts";
@@ -608,5 +609,58 @@ describe("15. 기존 이미지 없는 카드 CRUD 동작 유지", () => {
     assert.deepEqual(env.calls.db, []);
     const gone = await deleteCard(env.deps, "11111111-1111-4111-8111-999999999999");
     assert.equal(gone.ok, false); assert.equal(gone.dbChanged, false); assert.match(gone.message, /이미 삭제되었거나/);
+  });
+});
+
+/* ============================ 16. 브라우저가 보내는 「빈 파일」 입력 (실환경에서 발견된 회귀) ============================ */
+
+describe("16. 파일을 고르지 않은 저장(브라우저의 빈 파일 입력)이 오류가 아니라 「파일 없음」으로 처리됨", () => {
+  // 브라우저는 파일을 고르지 않아도 크기 0의 빈 파일을 보냄. 서버로 전달되면서 이름이 비어 있지 않은 값이 될 수 있음
+  const emptyInputs: Array<[string, unknown]> = [
+    ["이름이 빈 크기 0 파일(브라우저 원형)", new File([], "", { type: "application/octet-stream" })],
+    ['이름이 "undefined" 인 크기 0 파일(실환경에서 관찰된 형태)', new File([], "undefined", { type: "application/octet-stream" })],
+    ["이름이 있는 크기 0 파일", new File([], "photo.png", { type: "image/png" })],
+    ["이미지 형식 이름의 크기 0 파일", new File([], "image", { type: "image/jpeg" })],
+    ["빈 글자(\"\")", ""],
+    ["null", null],
+    ["undefined", undefined],
+  ];
+  for (const [name, entry] of emptyInputs) {
+    it(`${name} → 선택한 파일 없음(null)`, () => assert.equal(pickUploadedFile(entry), null));
+  }
+  it("실제 내용이 있는 파일은 그대로 전달됨", () => {
+    const f = mkFile(pngBytes(), "image/png", "a.png");
+    assert.equal(pickUploadedFile(f), f);
+  });
+  it("글자만 있는 값(파일이 아님)은 파일로 보지 않음", () => assert.equal(pickUploadedFile("photo.png"), null));
+
+  it("빈 파일 입력으로 카드 추가: 오류 없이 이미지 없는 카드가 만들어짐", async () => {
+    const env = makeEnv();
+    const image = pickUploadedFile(new File([], "undefined", { type: "application/octet-stream" }));
+    const r = await saveCard(env.deps, { id: null, fields: fields(), image, removeImage: false });
+    assert.equal(r.ok, true); assert.equal(r.message, "추가했습니다."); assert.deepEqual(env.calls.storage, []);
+  });
+  it("빈 파일 입력 + 「기존 이미지 지우기」: 오류 없이 제거되고 이전 파일이 정리됨", async () => {
+    const env = makeEnv(); env.addObject(OLD_PATH); const id = env.addCard(OLD_URL);
+    const image = pickUploadedFile(new File([], "undefined", { type: "application/octet-stream" }));
+    const r = await saveCard(env.deps, { id, fields: fields(), image, removeImage: true });
+    assert.equal(r.ok, true); assert.equal(env.cards.get(id)?.image_url, null); assert.deepEqual(env.calls.removed, [OLD_PATH]);
+  });
+  it("빈 파일 입력 + 글자만 수정: 오류 없이 수정되고 기존 이미지는 그대로", async () => {
+    const env = makeEnv(); env.addObject(OLD_PATH); const id = env.addCard(OLD_URL);
+    const image = pickUploadedFile(new File([], "", { type: "application/octet-stream" }));
+    const r = await saveCard(env.deps, { id, fields: fields({ title: "글자만 수정" }), image, removeImage: false });
+    assert.equal(r.ok, true); assert.deepEqual(env.calls.storage, []); assert.equal(env.cards.get(id)?.image_url, OLD_URL);
+  });
+  it("서비스 층의 빈 파일 거부는 그대로 유지(직접 넘기면 거부)", async () => {
+    const env = makeEnv();
+    const r = await saveCard(env.deps, { id: null, fields: fields(), image: new File([], "x.png", { type: "image/png" }), removeImage: false });
+    assert.equal(r.ok, false); assert.deepEqual(env.calls.db, []);
+  });
+  it("서버 액션은 파일 이름이 아니라 pickUploadedFile 로 선택 여부를 판단함", () => {
+    const actions = fs.readFileSync(path.resolve(import.meta.dirname, "..", "app/admin/actions.ts"), "utf8");
+    assert.match(actions, /pickUploadedFile\(imageEntry\)/);
+    assert.ok(!/imageEntry\.name/.test(actions), "파일 이름으로 선택 여부를 판단하면 안 됨");
+    assert.ok(!/instanceof File/.test(actions));
   });
 });

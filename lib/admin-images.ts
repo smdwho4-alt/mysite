@@ -55,6 +55,20 @@ export function detectImageKind(bytes: Uint8Array): ImageKind | null {
   return null;
 }
 
+/**
+ * 폼에서 받은 「image」 값에서 실제로 선택된 파일만 골라냅니다. (선택하지 않았으면 null)
+ * 브라우저는 파일을 고르지 않아도 「크기 0의 빈 파일」을 함께 보내며, 서버로 전달되는 과정에서
+ * 파일 이름이 비어 있지 않은 값(예: "undefined")으로 바뀔 수 있습니다.
+ * 따라서 이름이 아니라 「크기가 0보다 큰가」로만 판단합니다. (크기 0 = 선택 안 함)
+ */
+export function pickUploadedFile(entry: unknown): UploadedFileLike | null {
+  if (typeof entry !== "object" || entry === null) return null; // 글자("")나 없음
+  const f = entry as { size?: unknown; type?: unknown; arrayBuffer?: unknown };
+  if (typeof f.size !== "number" || typeof f.arrayBuffer !== "function") return null;
+  if (f.size <= 0) return null;
+  return entry as UploadedFileLike;
+}
+
 /** 업로드된 파일 검사. 하나라도 어긋나면 이유를 돌려주고 끝냅니다 (이 시점에는 DB·저장소에 아무것도 하지 않음). */
 export async function validateImageFile(file: UploadedFileLike): Promise<ImageCheck> {
   if (!file || typeof file.size !== "number" || file.size === 0) {

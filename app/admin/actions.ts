@@ -14,6 +14,7 @@ import { redirect } from "next/navigation";
 import { siteConfig } from "@/site.config";
 import { isAdmin } from "@/lib/admin-auth";
 import { createCardDeps } from "@/lib/admin-card-deps";
+import { pickUploadedFile } from "@/lib/admin-images";
 import { deleteCard, runIfAdmin, saveCard } from "@/lib/admin-card-service";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getAdminClient } from "@/lib/supabase-admin";
@@ -88,8 +89,9 @@ async function saveItemAsAdmin(formData: FormData): Promise<ActionState> {
   }
   if (!title) return { message: "제목을 입력하세요." };
 
-  // 파일을 고르지 않으면 이름도 크기도 비어 있음. 이름은 있는데 크기가 0이면 「빈 파일」 → 검사에서 거부됨
-  const image = imageEntry instanceof File && (imageEntry.size > 0 || imageEntry.name !== "") ? imageEntry : null;
+  // 파일을 고르지 않아도 브라우저는 크기 0의 빈 파일을 보냅니다 → 크기가 0보다 클 때만 「선택한 파일」로 봅니다.
+  // (이름으로 판단하면 안 됨: 서버로 전달되는 과정에서 이름이 비어 있지 않은 값으로 바뀔 수 있음)
+  const image = pickUploadedFile(imageEntry);
 
   const result = await saveCard(createCardDeps(supabase), {
     id: id || null,
