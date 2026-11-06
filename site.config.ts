@@ -150,6 +150,7 @@ export const siteConfig = {
     eyebrow: "Contact",
     title: "함께 이야기해요",
     description: "궁금한 점이 있다면 언제든 연락 주세요.",
+    phone: "041-572-6028",
     email: "hello@example.com",
     links: [
       { label: "Instagram", href: "https://instagram.com" },
