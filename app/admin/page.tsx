@@ -5,6 +5,8 @@ import { ArrowLeft, EyeOff } from "lucide-react";
 import { siteConfig } from "@/site.config";
 import { getAdminState } from "@/lib/admin-auth";
 import { getAdminClient } from "@/lib/supabase-admin";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { BOARD_CATEGORIES, BOARD_INFO, normalizeSearchQuery, parsePage } from "@/lib/board-shared";
 import type { Item } from "@/lib/types";
 import { Container } from "@/components/layout/container";
 import { Button } from "@/components/ui/button";
@@ -13,10 +15,18 @@ import { LoginForm } from "./_components/login-form";
 import { ItemForm } from "./_components/item-form";
 import { DeleteButton } from "./_components/delete-button";
 import { HeroTextForm } from "./_components/hero-text-form";
+import { PostsPanel } from "./_components/posts-panel";
 import { heroTextFields } from "@/lib/data";
 
 /** 관리자 탭 중 「히어로 글자」 탭의 주소 이름 */
 const HERO_TAB = "hero-text";
+
+/** 게시판 탭: 공지사항(posts-notice) · 주민자치회 소식(posts-news) */
+const BOARD_TABS = BOARD_CATEGORIES.map((category) => ({
+  key: `posts-${category}`,
+  category,
+  label: BOARD_INFO[category].title,
+}));
 
 /* 관리자 페이지 (주소: /admin) — Supabase Auth 로그인
    1) Supabase 연결 정보가 없으면 → 설정 안내
@@ -101,7 +111,14 @@ export default async function AdminPage(props: PageProps<"/admin">) {
   const sections = siteConfig.adminSections;
   const requested = typeof searchParams.section === "string" ? searchParams.section : undefined;
   const isHeroTab = requested === HERO_TAB;
+  const boardTab = BOARD_TABS.find((t) => t.key === requested);
+  const onItemsTab = !isHeroTab && !boardTab;
   const current = sections.find((s) => s.key === requested) ?? sections[0];
+
+  // 게시판 탭: 로그인한 관리자의 연결로 글을 읽습니다. (비공개 글 포함 — DB 의 RLS 가 관리자에게만 허용)
+  const boardClient = boardTab ? await createSupabaseServerClient() : null;
+  const boardQuery = normalizeSearchQuery(searchParams.q);
+  const boardPage = parsePage(searchParams.page);
 
   // 「히어로 글자」 탭: 저장된 글자를 불러와 입력 칸에 채움 (없으면 site.config.ts 글자)
   const heroResult = isHeroTab
@@ -115,7 +132,7 @@ export default async function AdminPage(props: PageProps<"/admin">) {
     value: savedHero.get(f.key) || f.fallback,
   }));
 
-  const { data, error: itemsError } = isHeroTab
+  const { data, error: itemsError } = !onItemsTab
     ? { data: [], error: null }
     : await supabase
         .from("items")
@@ -155,9 +172,14 @@ export default async function AdminPage(props: PageProps<"/admin">) {
             key={s.key}
             asChild
             size="sm"
-            variant={!isHeroTab && s.key === current.key ? "default" : "outline"}
+            variant={onItemsTab && s.key === current.key ? "default" : "outline"}
           >
             <Link href={`/admin?section=${s.key}`}>{s.label}</Link>
+          </Button>
+        ))}
+        {BOARD_TABS.map((t) => (
+          <Button key={t.key} asChild size="sm" variant={boardTab?.key === t.key ? "default" : "outline"}>
+            <Link href={`/admin?section=${t.key}`}>{t.label}</Link>
           </Button>
         ))}
       </nav>
@@ -178,7 +200,19 @@ export default async function AdminPage(props: PageProps<"/admin">) {
         </p>
       ) : null}
 
-      {isHeroTab ? (
+      {boardTab ? (
+        boardClient ? (
+          <PostsPanel
+            client={boardClient}
+            category={boardTab.category}
+            sectionKey={boardTab.key}
+            q={boardQuery}
+            page={boardPage}
+          />
+        ) : (
+          <p className="mt-8 text-sm text-destructive">Supabase 연결이 필요합니다.</p>
+        )
+      ) : isHeroTab ? (
         <section className="mt-8 max-w-2xl rounded-xl border p-6">
           <h2 className="text-lg font-semibold">히어로(첫 화면) 글자</h2>
           <p className="mb-5 mt-1 text-sm text-muted-foreground">

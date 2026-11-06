@@ -33,15 +33,15 @@ export function Navbar() {
         </Link>
 
         {/* 데스크톱 메뉴 */}
-        <nav className="hidden items-center gap-8 md:flex">
+        <nav className="hidden items-center gap-6 md:flex lg:gap-8">
           {siteConfig.nav.map((item) => (
-            <a
+            <Link
               key={item.href}
               href={item.href}
               className="text-sm text-muted-foreground transition-colors hover:text-foreground"
             >
               {item.label}
-            </a>
+            </Link>
           ))}
           <Button asChild size="sm" variant="outline">
             <a href={siteConfig.secretButton.href} target="_blank" rel="noopener noreferrer">
@@ -65,14 +65,14 @@ export function Navbar() {
       <nav className={cn("border-t border-border/60 md:hidden", open ? "block" : "hidden")}>
         <Container className="flex flex-col py-2">
           {siteConfig.nav.map((item) => (
-            <a
+            <Link
               key={item.href}
               href={item.href}
               onClick={() => setOpen(false)}
               className="py-3 text-base text-muted-foreground hover:text-foreground"
             >
               {item.label}
-            </a>
+            </Link>
           ))}
           <a
             href={siteConfig.secretButton.href}

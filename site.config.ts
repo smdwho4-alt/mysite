@@ -16,13 +16,15 @@ export const siteConfig = {
   title: "My Studio — 나의 첫 웹사이트",
   description: "바이브 코딩으로 만든 나의 웹사이트입니다.",
 
-  /* 상단 메뉴 (href 의 #이름 은 아래 섹션의 id 와 같아야 해당 위치로 이동) */
+  /* 상단 메뉴 (href 의 /#이름 은 첫 화면 아래 섹션의 id 와 같아야 해당 위치로 이동.
+     /#이름 으로 적어야 공지·소식 같은 다른 화면에서도 첫 화면의 해당 위치로 돌아옵니다) */
   nav: [
-    { label: "공지", href: "#notices" },
-    { label: "소개", href: "#about" },
-    { label: "강좌", href: "#courses" },
-    { label: "기능", href: "#features" },
-    { label: "연락처", href: "#contact" },
+    { label: "공지", href: "/notice" },
+    { label: "소식", href: "/news" },
+    { label: "소개", href: "/#about" },
+    { label: "강좌", href: "/#courses" },
+    { label: "기능", href: "/#features" },
+    { label: "연락처", href: "/#contact" },
   ],
 
   /* 상단 메뉴 맨 오른쪽 버튼 (누르면 새 탭에서 관리자 페이지가 열림) */
@@ -42,9 +44,10 @@ export const siteConfig = {
     eyebrowImage: "/images/hero-logo.png",
   },
 
-  /* 공지사항 · 주요소식 (첫 화면 아래 두 칸)
-     - 공지 띠(첫 화면 바로 아래 한 줄)에는 notices.items 의 첫 번째 글이 나옵니다.
-     - 글을 추가하려면 { title: "...", date: "YYYY-MM-DD" } 한 줄을 맨 위에 복사해 넣으세요. */
+  /* 공지사항 · 주민자치회 소식 (첫 화면 아래 두 칸)
+     ★ 이제 글은 관리자 페이지(/admin)의 「공지사항」「주민자치회 소식」 탭에서 등록합니다. (데이터베이스 posts 표)
+     아래 글은 데이터베이스를 읽지 못할 때(연결 전·오류)만 대신 보여주는 예시입니다.
+     - 공지 띠(첫 화면 바로 아래 한 줄)에는 가장 앞의 공지 글이 나옵니다. */
   notices: {
     title: "공지사항",
     items: [
@@ -54,7 +57,7 @@ export const siteConfig = {
     ],
   },
   news: {
-    title: "주요소식",
+    title: "주민자치회 소식",
     items: [
       { title: "AI 활용 강좌 1기 수료", date: "2026-09-30" },
       { title: "지역 도서관과 협력 프로그램 시작", date: "2026-08-18" },
@@ -115,9 +118,9 @@ export const siteConfig = {
     description: "자주 찾는 메뉴를 빠르게 이용하세요.",
     items: [
       { label: "강좌 신청", href: "#courses", icon: "book" },
-      { label: "공지사항", href: "#notices", icon: "megaphone" },
+      { label: "공지사항", href: "/notice", icon: "megaphone" },
       { label: "활동 모음", href: "#features", icon: "image" },
-      { label: "소식지", href: "#notices", icon: "newspaper" },
+      { label: "소식지", href: "/news", icon: "newspaper" },
       { label: "문의하기", href: "#contact", icon: "message" },
       { label: "오시는 길", href: "#contact", icon: "map" },
     ],

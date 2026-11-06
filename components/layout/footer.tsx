@@ -9,11 +9,11 @@ export function Footer() {
     <footer className="border-t border-border/60 py-10">
       <Container className="flex flex-col items-start justify-between gap-4 text-sm text-muted-foreground sm:flex-row sm:items-center">
         <p>{siteConfig.footer.copyright}</p>
-        <div className="flex items-center gap-6">
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
           {siteConfig.nav.map((item) => (
-            <a key={item.href} href={item.href} className="hover:text-foreground">
+            <Link key={item.href} href={item.href} className="hover:text-foreground">
               {item.label}
-            </a>
+            </Link>
           ))}
           {/* 숨은 관리자 버튼 */}
           <Link
