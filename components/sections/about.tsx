@@ -1,3 +1,5 @@
+import Image from "next/image";
+
 import { siteConfig } from "@/site.config";
 import { Container } from "@/components/layout/container";
 import { SectionHeader } from "@/components/layout/section-header";
@@ -17,8 +19,15 @@ export function About() {
             ))}
           </div>
         </div>
-        {/* 이미지 자리: public 폴더에 사진을 넣고 <img src="/사진이름.jpg" /> 로 바꿔 보세요 */}
-        <div className="aspect-[4/3] w-full rounded-xl border bg-background" />
+        {/* 그림은 site.config.ts 의 about.image 에서 바꿉니다. 지도 글자와 출처 표시가 잘리지 않게 원본 비율 그대로 보여줍니다. */}
+        <Image
+          src={about.image.src}
+          alt={about.image.alt}
+          width={1243}
+          height={867}
+          sizes="(min-width: 768px) 50vw, 100vw"
+          className="h-auto w-full rounded-xl border bg-background"
+        />
       </Container>
     </section>
   );
