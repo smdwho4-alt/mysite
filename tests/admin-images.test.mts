@@ -5,6 +5,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 
 import {
   MAX_IMAGE_BYTES,
@@ -615,40 +616,91 @@ describe("15. 기존 이미지 없는 카드 CRUD 동작 유지", () => {
 /* ============================ 16. 브라우저가 보내는 「빈 파일」 입력 (실환경에서 발견된 회귀) ============================ */
 
 describe("16. 파일을 고르지 않은 저장(브라우저의 빈 파일 입력)이 오류가 아니라 「파일 없음」으로 처리됨", () => {
-  // 브라우저는 파일을 고르지 않아도 크기 0의 빈 파일을 보냄. 서버로 전달되면서 이름이 비어 있지 않은 값이 될 수 있음
-  const emptyInputs: Array<[string, unknown]> = [
-    ["이름이 빈 크기 0 파일(브라우저 원형)", new File([], "", { type: "application/octet-stream" })],
-    ['이름이 "undefined" 인 크기 0 파일(실환경에서 관찰된 형태)', new File([], "undefined", { type: "application/octet-stream" })],
-    ["이름이 있는 크기 0 파일", new File([], "photo.png", { type: "image/png" })],
-    ["이미지 형식 이름의 크기 0 파일", new File([], "image", { type: "image/jpeg" })],
+  // 브라우저는 파일을 고르지 않아도 filename="" 인 빈 파트를 보내고, Next.js 서버 액션은 이를
+  // name="blob", type="application/octet-stream", size=0 인 파일로 읽습니다. (아래 17번에서 실제 부품으로 재현해 확인)
+  const unselectedInputs: Array<[string, unknown]> = [
+    ["이름 \"\" + octet-stream 크기 0(브라우저 원형)", new File([], "", { type: "application/octet-stream" })],
+    ["이름 \"blob\" + octet-stream 크기 0(Next 서버가 읽은 미선택 모양)", new File([], "blob", { type: "application/octet-stream" })],
+    ["이름 \"\" + 형식 없음 크기 0", new File([], "", { type: "" })],
+    ["이름 \"blob\" + 대문자 형식 크기 0", new File([], "blob", { type: "Application/Octet-Stream" })],
     ["빈 글자(\"\")", ""],
     ["null", null],
     ["undefined", undefined],
+    ["글자만 있는 값(파일이 아님)", "photo.png"],
+    ["숫자·객체 등 파일이 아닌 값", { size: 0 }],
+    ["크기가 음수인 이상한 값", { size: -1, type: "image/png", name: "x.png", arrayBuffer: async () => new ArrayBuffer(0) }],
   ];
-  for (const [name, entry] of emptyInputs) {
-    it(`${name} → 선택한 파일 없음(null)`, () => assert.equal(pickUploadedFile(entry), null));
+  for (const [name, entry] of unselectedInputs) {
+    it(`미선택 → ${name} → null`, () => assert.equal(pickUploadedFile(entry), null));
   }
+
+  // 실제로 고른 빈 파일은 「미선택」으로 숨기면 안 됨 → 그대로 돌려줘서 업로드 오류가 나야 함
+  const realEmptyFiles: Array<[string, File]> = [
+    ["photo.png(image/png) 크기 0", new File([], "photo.png", { type: "image/png" })],
+    ["photo.jpg(image/jpeg) 크기 0", new File([], "photo.jpg", { type: "image/jpeg" })],
+    ["data.dat(형식 모름) 크기 0", new File([], "data.dat", { type: "application/octet-stream" })],
+    ["notes.txt(text/plain) 크기 0", new File([], "notes.txt", { type: "text/plain" })],
+    ["이름 \"image\" + image/jpeg 크기 0", new File([], "image", { type: "image/jpeg" })],
+    ["이름 \"blob\" 이지만 이미지 형식 크기 0", new File([], "blob", { type: "image/png" })],
+    ["이름 \"undefined\" 크기 0", new File([], "undefined", { type: "application/octet-stream" })],
+  ];
+  for (const [name, f] of realEmptyFiles) {
+    it(`실제 빈 파일 → ${name} → 그대로 전달되고 저장은 오류로 거부됨`, async () => {
+      assert.equal(pickUploadedFile(f), f);
+      const env = makeEnv();
+      const r = await saveCard(env.deps, { id: null, fields: fields(), image: pickUploadedFile(f), removeImage: false });
+      assert.equal(r.ok, false); assert.match(r.message, /빈 파일/);
+      assert.deepEqual(env.calls.db, []); assert.deepEqual(env.calls.storage, []);
+    });
+  }
+
   it("실제 내용이 있는 파일은 그대로 전달됨", () => {
     const f = mkFile(pngBytes(), "image/png", "a.png");
     assert.equal(pickUploadedFile(f), f);
   });
-  it("글자만 있는 값(파일이 아님)은 파일로 보지 않음", () => assert.equal(pickUploadedFile("photo.png"), null));
+  it("내용이 있으면 이름이 blob·형식이 octet-stream 이어도 파일로 전달됨(형식 검사는 따로)", async () => {
+    const f = mkFile(pngBytes(), "application/octet-stream", "blob");
+    assert.equal(pickUploadedFile(f), f);
+    const r = await validateImageFile(f);
+    assert.equal(r.ok, false);
+  });
+  it("잘못된 형식의 파일(SVG)을 고르면 오류", async () => {
+    const f = new File([textBytes("<svg xmlns='http://www.w3.org/2000/svg'/>")], "a.svg", { type: "image/svg+xml" });
+    assert.equal(pickUploadedFile(f), f);
+    const env = makeEnv();
+    const r = await saveCard(env.deps, { id: null, fields: fields(), image: pickUploadedFile(f), removeImage: false });
+    assert.equal(r.ok, false); assert.deepEqual(env.calls.db, []); assert.deepEqual(env.calls.storage, []);
+  });
+  it("확장자는 png 이지만 내용이 텍스트인 파일을 고르면 오류", async () => {
+    const f = new File([textBytes("not an image")], "a.png", { type: "image/png" });
+    assert.equal(pickUploadedFile(f), f);
+    const env = makeEnv();
+    const r = await saveCard(env.deps, { id: null, fields: fields(), image: pickUploadedFile(f), removeImage: false });
+    assert.equal(r.ok, false); assert.deepEqual(env.calls.db, []);
+  });
+  it("기존 이미지가 있어도, 잘못된 파일을 고르면 오류이고 기존 이미지·DB 는 그대로", async () => {
+    const env = makeEnv(); env.addObject(OLD_PATH); const id = env.addCard(OLD_URL);
+    const f = new File([], "photo.png", { type: "image/png" }); // 실제 빈 파일
+    const r = await saveCard(env.deps, { id, fields: fields({ title: "바뀌면 안 됨" }), image: pickUploadedFile(f), removeImage: false });
+    assert.equal(r.ok, false); assert.equal(env.cards.get(id)?.image_url, OLD_URL);
+    assert.deepEqual(env.calls.removed, []); assert.deepEqual(env.calls.storage, []);
+  });
 
   it("빈 파일 입력으로 카드 추가: 오류 없이 이미지 없는 카드가 만들어짐", async () => {
     const env = makeEnv();
-    const image = pickUploadedFile(new File([], "undefined", { type: "application/octet-stream" }));
+    const image = pickUploadedFile(new File([], "blob", { type: "application/octet-stream" }));
     const r = await saveCard(env.deps, { id: null, fields: fields(), image, removeImage: false });
     assert.equal(r.ok, true); assert.equal(r.message, "추가했습니다."); assert.deepEqual(env.calls.storage, []);
   });
   it("빈 파일 입력 + 「기존 이미지 지우기」: 오류 없이 제거되고 이전 파일이 정리됨", async () => {
     const env = makeEnv(); env.addObject(OLD_PATH); const id = env.addCard(OLD_URL);
-    const image = pickUploadedFile(new File([], "undefined", { type: "application/octet-stream" }));
+    const image = pickUploadedFile(new File([], "blob", { type: "application/octet-stream" }));
     const r = await saveCard(env.deps, { id, fields: fields(), image, removeImage: true });
     assert.equal(r.ok, true); assert.equal(env.cards.get(id)?.image_url, null); assert.deepEqual(env.calls.removed, [OLD_PATH]);
   });
   it("빈 파일 입력 + 글자만 수정: 오류 없이 수정되고 기존 이미지는 그대로", async () => {
     const env = makeEnv(); env.addObject(OLD_PATH); const id = env.addCard(OLD_URL);
-    const image = pickUploadedFile(new File([], "", { type: "application/octet-stream" }));
+    const image = pickUploadedFile(new File([], "blob", { type: "application/octet-stream" }));
     const r = await saveCard(env.deps, { id, fields: fields({ title: "글자만 수정" }), image, removeImage: false });
     assert.equal(r.ok, true); assert.deepEqual(env.calls.storage, []); assert.equal(env.cards.get(id)?.image_url, OLD_URL);
   });
@@ -662,5 +714,43 @@ describe("16. 파일을 고르지 않은 저장(브라우저의 빈 파일 입�
     assert.match(actions, /pickUploadedFile\(imageEntry\)/);
     assert.ok(!/imageEntry\.name/.test(actions), "파일 이름으로 선택 여부를 판단하면 안 됨");
     assert.ok(!/instanceof File/.test(actions));
+  });
+});
+
+/* ============================ 17. 실제 Next.js 서버 액션 수신 부품으로 재현한 「미선택」 모양 ============================ */
+
+describe("17. Next.js 가 서버 액션 요청을 읽는 방식(busboy + React)으로 만든 파일을 pickUploadedFile 이 올바르게 판별함", () => {
+  // 네트워크·DB 없이 로컬 부품만 사용. Next.js 를 올린 뒤 수신 모양이 바뀌면 이 시험이 먼저 알려 줌
+  const fixture = path.resolve(import.meta.dirname, "fixtures", "decode-empty-file.mjs");
+  type Shape = { kind: string; name?: string; size?: number; type?: string };
+  let shapes: Record<"unselected" | "emptyPng" | "emptyUnknown" | "withContent", Shape>;
+
+  it("수신 모양 재현(파일 미선택 / 빈 파일 / 내용 있는 파일)", () => {
+    const stdout = execFileSync(process.execPath, ["--conditions=react-server", fixture], { encoding: "utf8", timeout: 60_000 });
+    shapes = JSON.parse(stdout.trim().split("\n").pop() as string);
+    assert.equal(shapes.unselected.kind, "file");
+    assert.equal(shapes.unselected.size, 0);
+  });
+
+  const toFile = (s: Shape) => new File(s.size ? [new Uint8Array(s.size)] : [], s.name ?? "", { type: s.type ?? "" });
+
+  it("파일을 고르지 않음 → 서버에서 크기 0 + 이름 \"\"/\"blob\" + octet-stream 모양 → 미선택(null)", () => {
+    assert.ok(["", "blob"].includes(shapes.unselected.name as string), `실제 이름: ${shapes.unselected.name}`);
+    assert.equal(shapes.unselected.type, "application/octet-stream");
+    assert.equal(pickUploadedFile(toFile(shapes.unselected)), null);
+  });
+  it("크기 0 의 photo.png 를 고름 → 업로드 오류 대상으로 전달됨", () => {
+    assert.equal(shapes.emptyPng.name, "photo.png");
+    const f = toFile(shapes.emptyPng);
+    assert.equal(pickUploadedFile(f), f);
+  });
+  it("크기 0 의 data.dat 를 고름 → 업로드 오류 대상으로 전달됨", () => {
+    const f = toFile(shapes.emptyUnknown);
+    assert.equal(pickUploadedFile(f), f);
+  });
+  it("내용이 있는 파일 → 그대로 전달됨", () => {
+    assert.equal(shapes.withContent.size, 3);
+    const f = toFile(shapes.withContent);
+    assert.equal(pickUploadedFile(f), f);
   });
 });

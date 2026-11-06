@@ -57,16 +57,31 @@ export function detectImageKind(bytes: Uint8Array): ImageKind | null {
 
 /**
  * 폼에서 받은 「image」 값에서 실제로 선택된 파일만 골라냅니다. (선택하지 않았으면 null)
- * 브라우저는 파일을 고르지 않아도 「크기 0의 빈 파일」을 함께 보내며, 서버로 전달되는 과정에서
- * 파일 이름이 비어 있지 않은 값(예: "undefined")으로 바뀔 수 있습니다.
- * 따라서 이름이 아니라 「크기가 0보다 큰가」로만 판단합니다. (크기 0 = 선택 안 함)
+ * 브라우저는 파일을 고르지 않아도 「이름 없는(filename="") 크기 0의 빈 파트」를 보냅니다.
+ * Next.js 서버 액션이 이를 읽으면 이름이 "" 가 아니라 "blob", 형식은 application/octet-stream 인 크기 0 파일이 됩니다.
+ * (로컬 재현으로 확인: 파일을 고르지 않음 → name="blob" type="application/octet-stream" / 실제 빈 파일 photo.png → name="photo.png" type="image/png")
+ *
+ * 판별 규칙
+ *  - 파일이 아니거나 없음                                   → 선택 안 함(null)
+ *  - 크기 > 0                                               → 선택한 파일 (형식 검사는 validateImageFile 이 함)
+ *  - 크기 = 0 이고 「미선택 모양」(이름 "" 또는 "blob" + 형식 없음/octet-stream) → 선택 안 함(null)
+ *  - 크기 = 0 이고 그 밖의 모양(예: photo.png, image/png)     → 실제로 고른 빈 파일 → 그대로 돌려줘 「빈 파일은 올릴 수 없습니다」 오류가 나게 함
  */
+const UNSELECTED_NAMES = ["", "blob"];
+const UNSELECTED_TYPES = ["", "application/octet-stream"];
+
 export function pickUploadedFile(entry: unknown): UploadedFileLike | null {
   if (typeof entry !== "object" || entry === null) return null; // 글자("")나 없음
-  const f = entry as { size?: unknown; type?: unknown; arrayBuffer?: unknown };
+  const f = entry as { size?: unknown; type?: unknown; name?: unknown; arrayBuffer?: unknown };
   if (typeof f.size !== "number" || typeof f.arrayBuffer !== "function") return null;
-  if (f.size <= 0) return null;
-  return entry as UploadedFileLike;
+  if (f.size > 0) return entry as UploadedFileLike;
+  if (f.size < 0 || Number.isNaN(f.size)) return null;
+
+  // 크기 0: 브라우저의 「미선택」 모양인지 확인
+  const name = typeof f.name === "string" ? f.name : "";
+  const type = typeof f.type === "string" ? f.type.toLowerCase().trim() : "";
+  const looksUnselected = UNSELECTED_NAMES.includes(name) && UNSELECTED_TYPES.includes(type);
+  return looksUnselected ? null : (entry as UploadedFileLike);
 }
 
 /** 업로드된 파일 검사. 하나라도 어긋나면 이유를 돌려주고 끝냅니다 (이 시점에는 DB·저장소에 아무것도 하지 않음). */
