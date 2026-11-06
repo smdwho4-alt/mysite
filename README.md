@@ -88,11 +88,16 @@ Claude Code 입력창에 `/` 를 치면 목록이 나옵니다.
 ## 4. 관리자 페이지 쓰기
 
 1. `.env.example` 파일을 복사 → 이름을 **`.env.local`** 로 변경
-2. `ADMIN_PASSWORD=` 뒤에 비밀번호 입력 후 저장
-3. 개발 서버 재시작 (`Ctrl + C` → `npm run dev`)
-4. 사이트 맨 아래 오른쪽의 작은 점 **•** 클릭 (또는 주소창에 `/admin`)
+2. Supabase 값 3개를 입력 후 저장 (아래 「5. Supabase 연결하기」 참고)
+3. Supabase **SQL Editor** 에서 `supabase/schema.sql` 실행 후, `supabase/migrations/` 의 SQL 을 번호 순서(001 → 005)로 실행
+4. Supabase 대시보드 **Authentication** 에서 「Allow new users to sign up」(회원가입)을 끄고, **Users** 에서 관리자 계정을 만든 뒤(「Auto Confirm User」 체크),
+   `supabase/migrations/001_admins.sql` 맨 아래 안내대로 관리자로 등록
+5. 개발 서버 재시작 (`Ctrl + C` → `npm run dev`)
+6. 주소창에 `/admin` → **이메일 + 비밀번호**로 로그인
 
-> Supabase를 연결하기 전에는 로그인까지만 되고, 카드 관리는 연결 후에 됩니다.
+> 관리자 확인은 Supabase Auth 로그인 + 관리자 명단(`admins`) 두 가지를 서버에서 확인합니다.
+> 예전의 `ADMIN_PASSWORD` 방식은 더 이상 쓰지 않습니다.
+> Supabase를 연결하기 전에는 관리자 로그인이 되지 않습니다.
 > 연결 전에는 사이트에 `site.config.ts` 의 예시 카드가 보입니다.
 
 **관리할 섹션 늘리기:** `site.config.ts` 의 `adminSections` 에 한 줄 추가
@@ -108,7 +113,7 @@ Claude Code 입력창에 `/` 를 치면 목록이 나옵니다.
    - `NEXT_PUBLIC_SUPABASE_URL` ← Data API 의 Project URL
    - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` ← API Keys 의 Publishable key
    - `SUPABASE_SECRET_KEY` ← API Keys 의 Secret key (**절대 공유 금지**)
-4. 개발 서버 재시작 → `/admin` 에서 카드 추가해 보기
+4. 개발 서버 재시작 → `/admin` 에서 관리자 계정으로 로그인한 뒤 카드 추가해 보기 (로그인 준비는 위 「4. 관리자 페이지 쓰기」)
 
 ---
 
@@ -116,7 +121,9 @@ Claude Code 입력창에 `/` 를 치면 목록이 나옵니다.
 
 1. Claude에게 `/check` → 문제 없으면 "GitHub에 push 해줘"
 2. [vercel.com](https://vercel.com) → **Add New → Project** → 내 저장소 **Import**
-3. **Environment Variables** 에 `.env.local` 의 4개 값을 똑같이 입력
+3. **Environment Variables** 에 `.env.local` 의 3개 값(URL, Publishable key, Secret key)을 입력
+   - 운영(Production)과 미리보기(Preview)는 **서로 다른 Supabase 프로젝트** 값을 쓰는지 확인하세요
+   - 운영 Supabase 에도 관리자 계정 생성 + `admins` 등록 + 회원가입 차단 + `supabase/migrations/` SQL 적용이 되어 있어야 관리자가 로그인할 수 있습니다
 4. **Deploy** → 1~2분 뒤 `xxx.vercel.app` 주소가 생깁니다
 5. 이후에는 push 할 때마다 자동으로 다시 배포됩니다
 
@@ -130,5 +137,6 @@ Claude Code 입력창에 `/` 를 치면 목록이 나옵니다.
 | `Port 3000 is in use` | 이미 켜진 서버가 있음. 그 터미널에서 `Ctrl + C` 또는 3001 주소로 접속 |
 | `.env.local` 을 바꿨는데 반영 안 됨 | 개발 서버 재시작 |
 | 화면이 하얗고 에러 | 에러 문구를 그대로 Claude에게 붙여넣고 "이 에러 고쳐줘" |
-| Vercel 배포만 실패 | Vercel 환경변수 4개 확인 → Claude에게 `/check` |
+| Vercel 배포만 실패 | Vercel 환경변수 3개 확인 → Claude에게 `/check` |
+| 관리자 로그인이 안 됨 | 이메일·비밀번호 확인 → 계정이 「Auto Confirm」 인증됐는지, `admins` 에 등록됐는지 확인 |
 | Claude 사용량이 금방 참 | 작업마다 `/clear`, 요청을 구체적으로, 큰 변경은 한 번에 하나씩 |

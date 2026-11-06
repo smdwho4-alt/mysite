@@ -62,8 +62,8 @@ export function ItemForm({ section, item }: { section: string; item?: Item }) {
       </div>
 
       <label className="grid gap-1.5 text-sm">
-        <span className="font-medium">이미지 (선택, 5MB 이하)</span>
-        <input name="image" type="file" accept="image/*" className="text-sm" />
+        <span className="font-medium">이미지 (선택, JPG·PNG·WebP, 5MB 미만)</span>
+        <input name="image" type="file" accept="image/jpeg,image/png,image/webp" className="text-sm" />
       </label>
 
       <div className="flex flex-wrap gap-6 text-sm">

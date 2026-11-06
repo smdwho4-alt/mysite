@@ -3,8 +3,10 @@ import Image from "next/image";
 import { ArrowLeft, EyeOff } from "lucide-react";
 
 import { siteConfig } from "@/site.config";
-import { isAdmin, isAdminPasswordSet } from "@/lib/admin-auth";
+import { getAdminState } from "@/lib/admin-auth";
 import { getAdminClient } from "@/lib/supabase-admin";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { BOARD_CATEGORIES, BOARD_INFO, normalizeSearchQuery, parsePage } from "@/lib/board-shared";
 import type { Item } from "@/lib/types";
 import { Container } from "@/components/layout/container";
 import { Button } from "@/components/ui/button";
@@ -13,18 +15,27 @@ import { LoginForm } from "./_components/login-form";
 import { ItemForm } from "./_components/item-form";
 import { DeleteButton } from "./_components/delete-button";
 import { HeroTextForm } from "./_components/hero-text-form";
+import { PostsPanel } from "./_components/posts-panel";
 import { heroTextFields } from "@/lib/data";
 
 /** 관리자 탭 중 「히어로 글자」 탭의 주소 이름 */
 const HERO_TAB = "hero-text";
 
-/* 관리자 페이지 (주소: /admin)
-   1) 비밀번호가 설정 안 됐으면 → 설정 안내
-   2) 로그인 안 했으면 → 로그인 화면
-   3) Supabase 연결 안 됐으면 → 연결 안내
-   4) 모두 준비됐으면 → 섹션별 카드(항목) 관리 */
+/** 게시판 탭: 공지사항(posts-notice) · 주민자치회 소식(posts-news) */
+const BOARD_TABS = BOARD_CATEGORIES.map((category) => ({
+  key: `posts-${category}`,
+  category,
+  label: BOARD_INFO[category].title,
+}));
 
-export const metadata = { title: "관리자" };
+/* 관리자 페이지 (주소: /admin) — Supabase Auth 로그인
+   1) Supabase 연결 정보가 없으면 → 설정 안내
+   2) 로그인 안 했으면 → 로그인 화면
+   3) 로그인했지만 관리자 명단(admins)에 없으면 → 접근 거부 안내
+   4) 관리자이면 → 섹션별 카드(항목) 관리
+   ※ 관리자 확인은 이 페이지와 모든 서버 액션(actions.ts)이 서버에서 각각 직접 합니다. */
+
+export const metadata = { title: "관리자", robots: { index: false, follow: false } };
 
 function Notice({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -38,16 +49,19 @@ function Notice({ title, children }: { title: string; children: React.ReactNode 
 export default async function AdminPage(props: PageProps<"/admin">) {
   const searchParams = await props.searchParams;
 
-  if (!isAdminPasswordSet()) {
+  const admin = await getAdminState();
+
+  if (admin.status === "unconfigured") {
     return (
       <Container>
-        <Notice title="관리자 비밀번호를 먼저 설정하세요">
+        <Notice title="Supabase 연결 정보를 먼저 설정하세요">
           <p>
             1. 프로젝트 폴더의 <code>.env.example</code> 파일을 복사해서 이름을{" "}
             <code>.env.local</code> 로 바꿉니다.
           </p>
           <p>
-            2. <code>ADMIN_PASSWORD=</code> 뒤에 원하는 비밀번호를 적고 저장합니다.
+            2. <code>NEXT_PUBLIC_SUPABASE_URL</code>, <code>NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY</code>,{" "}
+            <code>SUPABASE_SECRET_KEY</code> 뒤에 Supabase 에서 복사한 값을 넣고 저장합니다.
           </p>
           <p>3. 개발 서버를 껐다가(Ctrl + C) 다시 켭니다(npm run dev).</p>
         </Notice>
@@ -55,10 +69,26 @@ export default async function AdminPage(props: PageProps<"/admin">) {
     );
   }
 
-  if (!(await isAdmin())) {
+  if (admin.status === "anonymous") {
     return (
       <Container>
         <LoginForm />
+      </Container>
+    );
+  }
+
+  if (admin.status === "not_admin") {
+    return (
+      <Container>
+        <Notice title="관리자 권한이 없는 계정입니다">
+          <p>로그인은 되어 있지만 이 계정은 관리자 명단에 등록되어 있지 않습니다.</p>
+          <p>관리자 계정으로 다시 로그인하려면 먼저 로그아웃하세요.</p>
+          <form action={logout} className="pt-2">
+            <Button type="submit" variant="outline" size="sm">
+              로그아웃
+            </Button>
+          </form>
+        </Notice>
       </Container>
     );
   }
@@ -81,7 +111,14 @@ export default async function AdminPage(props: PageProps<"/admin">) {
   const sections = siteConfig.adminSections;
   const requested = typeof searchParams.section === "string" ? searchParams.section : undefined;
   const isHeroTab = requested === HERO_TAB;
+  const boardTab = BOARD_TABS.find((t) => t.key === requested);
+  const onItemsTab = !isHeroTab && !boardTab;
   const current = sections.find((s) => s.key === requested) ?? sections[0];
+
+  // 게시판 탭: 로그인한 관리자의 연결로 글을 읽습니다. (비공개 글 포함 — DB 의 RLS 가 관리자에게만 허용)
+  const boardClient = boardTab ? await createSupabaseServerClient() : null;
+  const boardQuery = normalizeSearchQuery(searchParams.q);
+  const boardPage = parsePage(searchParams.page);
 
   // 「히어로 글자」 탭: 저장된 글자를 불러와 입력 칸에 채움 (없으면 site.config.ts 글자)
   const heroResult = isHeroTab
@@ -95,7 +132,7 @@ export default async function AdminPage(props: PageProps<"/admin">) {
     value: savedHero.get(f.key) || f.fallback,
   }));
 
-  const { data, error: itemsError } = isHeroTab
+  const { data, error: itemsError } = !onItemsTab
     ? { data: [], error: null }
     : await supabase
         .from("items")
@@ -135,12 +172,25 @@ export default async function AdminPage(props: PageProps<"/admin">) {
             key={s.key}
             asChild
             size="sm"
-            variant={!isHeroTab && s.key === current.key ? "default" : "outline"}
+            variant={onItemsTab && s.key === current.key ? "default" : "outline"}
           >
             <Link href={`/admin?section=${s.key}`}>{s.label}</Link>
           </Button>
         ))}
+        {BOARD_TABS.map((t) => (
+          <Button key={t.key} asChild size="sm" variant={boardTab?.key === t.key ? "default" : "outline"}>
+            <Link href={`/admin?section=${t.key}`}>{t.label}</Link>
+          </Button>
+        ))}
       </nav>
+
+      {/* 카드 삭제 후 이미지 파일 정리에 실패했을 때의 안내 (정해진 코드일 때만 표시 — 주소로 임의 문구를 넣을 수 없음) */}
+      {searchParams.notice === "image-cleanup-failed" ? (
+        <p role="alert" className="mt-6 rounded-lg border border-destructive/40 p-4 text-sm text-destructive">
+          카드는 삭제했지만 이미지 파일 정리에 실패했습니다. 남은 파일 경로는 서버 기록(<code>[image-cleanup]</code>)에 있으니
+          확인 후 정리해 주세요.
+        </p>
+      ) : null}
 
       {error ? (
         <p className="mt-6 rounded-lg border border-destructive/40 p-4 text-sm text-destructive">
@@ -150,7 +200,19 @@ export default async function AdminPage(props: PageProps<"/admin">) {
         </p>
       ) : null}
 
-      {isHeroTab ? (
+      {boardTab ? (
+        boardClient ? (
+          <PostsPanel
+            client={boardClient}
+            category={boardTab.category}
+            sectionKey={boardTab.key}
+            q={boardQuery}
+            page={boardPage}
+          />
+        ) : (
+          <p className="mt-8 text-sm text-destructive">Supabase 연결이 필요합니다.</p>
+        )
+      ) : isHeroTab ? (
         <section className="mt-8 max-w-2xl rounded-xl border p-6">
           <h2 className="text-lg font-semibold">히어로(첫 화면) 글자</h2>
           <p className="mb-5 mt-1 text-sm text-muted-foreground">
@@ -192,7 +254,7 @@ export default async function AdminPage(props: PageProps<"/admin">) {
                       </p>
                       <p className="text-xs text-muted-foreground">순서 {item.sort_order}</p>
                     </div>
-                    <DeleteButton id={item.id} imageUrl={item.image_url} />
+                    <DeleteButton id={item.id} />
                   </div>
                   <details className="border-t px-4 py-3">
                     <summary className="cursor-pointer text-sm text-muted-foreground">수정하기</summary>
