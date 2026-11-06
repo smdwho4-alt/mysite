@@ -162,6 +162,14 @@ export default async function AdminPage(props: PageProps<"/admin">) {
         ))}
       </nav>
 
+      {/* 카드 삭제 후 이미지 파일 정리에 실패했을 때의 안내 (정해진 코드일 때만 표시 — 주소로 임의 문구를 넣을 수 없음) */}
+      {searchParams.notice === "image-cleanup-failed" ? (
+        <p role="alert" className="mt-6 rounded-lg border border-destructive/40 p-4 text-sm text-destructive">
+          카드는 삭제했지만 이미지 파일 정리에 실패했습니다. 남은 파일 경로는 서버 기록(<code>[image-cleanup]</code>)에 있으니
+          확인 후 정리해 주세요.
+        </p>
+      ) : null}
+
       {error ? (
         <p className="mt-6 rounded-lg border border-destructive/40 p-4 text-sm text-destructive">
           데이터를 불러오지 못했습니다: {error.message}
@@ -212,7 +220,7 @@ export default async function AdminPage(props: PageProps<"/admin">) {
                       </p>
                       <p className="text-xs text-muted-foreground">순서 {item.sort_order}</p>
                     </div>
-                    <DeleteButton id={item.id} imageUrl={item.image_url} />
+                    <DeleteButton id={item.id} />
                   </div>
                   <details className="border-t px-4 py-3">
                     <summary className="cursor-pointer text-sm text-muted-foreground">수정하기</summary>

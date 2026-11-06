@@ -2,22 +2,27 @@
 
 /* 관리자 페이지의 버튼들이 실제로 하는 일 (서버에서 실행됨)
    - login / logout      : 로그인, 로그아웃 (Supabase Auth: 이메일 + 비밀번호)
-   - saveItem            : 카드 추가 또는 수정 (이미지 업로드 포함)
-   - deleteItem          : 카드 삭제
-   - saveHeroTexts       : 히어로(첫 화면) 글자 저장 */
+   - saveItem            : 카드 추가 또는 수정 (이미지 업로드·교체·제거 포함)
+   - deleteItem          : 카드 삭제 (카드의 이미지 파일 정리 포함)
+   - saveHeroTexts       : 히어로(첫 화면) 글자 저장
+   ※ 이미지 검사와 정리 규칙은 lib/admin-images.ts, lib/admin-card-service.ts 에 있습니다.
+   ※ 모든 관리자 액션은 맨 처음에 isAdmin() 으로 서버에서 관리자를 확인합니다. */
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { siteConfig } from "@/site.config";
 import { isAdmin } from "@/lib/admin-auth";
+import { createCardDeps } from "@/lib/admin-card-deps";
+import { deleteCard, runIfAdmin, saveCard } from "@/lib/admin-card-service";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { getAdminClient, IMAGE_BUCKET } from "@/lib/supabase-admin";
+import { getAdminClient } from "@/lib/supabase-admin";
 import { heroTextFields } from "@/lib/data";
 
 export type ActionState = { ok?: boolean; message?: string };
 
-const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5MB
+const LOGIN_REQUIRED_MESSAGE = "로그인이 필요합니다. 새로고침 후 다시 로그인하세요.";
+const NO_SUPABASE_MESSAGE = "Supabase가 연결되지 않았습니다. .env.local 을 확인하세요.";
 
 /* ---------- 로그인 / 로그아웃 ---------- */
 
@@ -61,10 +66,12 @@ export async function logout() {
 /* ---------- 카드 저장 (추가 / 수정) ---------- */
 
 export async function saveItem(_prev: ActionState, formData: FormData): Promise<ActionState> {
-  if (!(await isAdmin())) return { message: "로그인이 필요합니다. 새로고침 후 다시 로그인하세요." };
+  return runIfAdmin(isAdmin, () => saveItemAsAdmin(formData), { message: LOGIN_REQUIRED_MESSAGE });
+}
 
+async function saveItemAsAdmin(formData: FormData): Promise<ActionState> {
   const supabase = getAdminClient();
-  if (!supabase) return { message: "Supabase가 연결되지 않았습니다. .env.local 을 확인하세요." };
+  if (!supabase) return { message: NO_SUPABASE_MESSAGE };
 
   const id = String(formData.get("id") ?? "");
   const section = String(formData.get("section") ?? "");
@@ -74,71 +81,62 @@ export async function saveItem(_prev: ActionState, formData: FormData): Promise<
   const sortOrder = Number(formData.get("sort_order") ?? 0) || 0;
   const isVisible = formData.get("is_visible") === "on";
   const removeImage = formData.get("remove_image") === "on";
-  const image = formData.get("image");
+  const imageEntry = formData.get("image");
 
   if (!siteConfig.adminSections.some((s) => s.key === section)) {
     return { message: "알 수 없는 섹션입니다." };
   }
   if (!title) return { message: "제목을 입력하세요." };
 
-  const row: Record<string, unknown> = {
-    section,
-    title,
-    description: description || null,
-    link_url: linkUrl || null,
-    sort_order: sortOrder,
-    is_visible: isVisible,
-  };
+  // 파일을 고르지 않으면 이름도 크기도 비어 있음. 이름은 있는데 크기가 0이면 「빈 파일」 → 검사에서 거부됨
+  const image = imageEntry instanceof File && (imageEntry.size > 0 || imageEntry.name !== "") ? imageEntry : null;
 
-  // 새 이미지를 올린 경우 → Supabase 저장소에 업로드
-  if (image instanceof File && image.size > 0) {
-    if (!image.type.startsWith("image/")) return { message: "이미지 파일만 올릴 수 있습니다." };
-    if (image.size > MAX_IMAGE_BYTES) return { message: "이미지는 5MB 이하만 올릴 수 있습니다." };
+  const result = await saveCard(createCardDeps(supabase), {
+    id: id || null,
+    fields: {
+      section,
+      title,
+      description: description || null,
+      link_url: linkUrl || null,
+      sort_order: sortOrder,
+      is_visible: isVisible,
+    },
+    image,
+    removeImage,
+  });
 
-    const ext = (image.name.split(".").pop() || "jpg").toLowerCase().replace(/[^a-z0-9]/g, "");
-    const path = `${section}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
-    const { error: uploadError } = await supabase.storage
-      .from(IMAGE_BUCKET)
-      .upload(path, image, { contentType: image.type, upsert: false });
-    if (uploadError) return { message: `이미지 업로드 실패: ${uploadError.message}` };
-
-    row.image_url = supabase.storage.from(IMAGE_BUCKET).getPublicUrl(path).data.publicUrl;
-  } else if (removeImage) {
-    row.image_url = null;
+  if (result.dbChanged) {
+    revalidatePath("/");
+    revalidatePath("/admin");
   }
-
-  const { error } = id
-    ? await supabase.from("items").update(row).eq("id", id)
-    : await supabase.from("items").insert(row);
-
-  if (error) return { message: `저장 실패: ${error.message}` };
-
-  revalidatePath("/");
-  revalidatePath("/admin");
-  return { ok: true, message: id ? "수정했습니다." : "추가했습니다." };
+  return { ok: result.ok, message: result.message };
 }
 
 /* ---------- 카드 삭제 ---------- */
 
-export async function deleteItem(formData: FormData) {
-  if (!(await isAdmin())) return;
+export async function deleteItem(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  return runIfAdmin(isAdmin, () => deleteItemAsAdmin(formData), { message: LOGIN_REQUIRED_MESSAGE });
+}
+
+async function deleteItemAsAdmin(formData: FormData): Promise<ActionState> {
   const supabase = getAdminClient();
-  if (!supabase) return;
+  if (!supabase) return { message: NO_SUPABASE_MESSAGE };
 
+  // 카드 번호만 사용합니다. (이미지 주소는 브라우저가 보낸 값이 아니라 서버가 DB 에서 직접 조회)
   const id = String(formData.get("id") ?? "");
-  const imageUrl = String(formData.get("image_url") ?? "");
-  if (!id) return;
+  const result = await deleteCard(createCardDeps(supabase), id);
 
-  await supabase.from("items").delete().eq("id", id);
-
-  // 연결된 이미지 파일도 저장소에서 정리
-  const marker = `/object/public/${IMAGE_BUCKET}/`;
-  if (imageUrl.includes(marker)) {
-    await supabase.storage.from(IMAGE_BUCKET).remove([imageUrl.split(marker)[1]]);
-  }
+  if (!result.dbChanged) return { message: result.message };
 
   revalidatePath("/");
   revalidatePath("/admin");
+
+  // 카드는 삭제됐지만 이미지 파일 정리에 실패한 경우: 카드가 목록에서 사라져 버튼의 안내가 보이지 않으므로
+  // 정해진 안내 코드만 붙여 목록으로 돌아갑니다. (남은 파일 경로는 서버 기록 [image-cleanup] 에 있음)
+  if (result.leftoverPaths.length > 0 && result.section && siteConfig.adminSections.some((s) => s.key === result.section)) {
+    redirect(`/admin?section=${result.section}&notice=image-cleanup-failed`);
+  }
+  return { ok: true, message: result.message };
 }
 
 /* ---------- 히어로 글자 저장 ---------- */
